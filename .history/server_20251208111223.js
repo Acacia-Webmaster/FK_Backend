@@ -27,10 +27,9 @@ app.get('/health', async (req, res) => {
 });
 
 app.use('/auth', authRoutes);
-
 app.use('/clients', clientsRoutes);
 
-const port = 4100;
+const port = 4100; // <--- change this
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
 });

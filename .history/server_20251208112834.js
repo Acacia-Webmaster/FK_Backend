@@ -28,6 +28,7 @@ app.get('/health', async (req, res) => {
 
 app.use('/auth', authRoutes);
 
+// 🔥 IMPORTANT: mount clients under /clients
 app.use('/clients', clientsRoutes);
 
 const port = 4100;
