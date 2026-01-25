@@ -4,6 +4,15 @@ const router = express.Router();
 const pool = require('./db');
 const auth = require('./authMiddleware'); // ⬅️ add this
 router.use(auth);
+const upload = require('./uploadClientPdfs');
+const fs = require('fs');
+const path = require('path');
+const uploadToFTP = require('./ftpClient');
+const crypto = require('crypto');
+const { uploadToHostinger } = require("./ftpUpload");
+
+const PROD_ASSETS_BASE =
+  "/home/u489208360/domains/acaciawebmaster.com/public_html/fitnesskingdom/assets";
 
 // Getting and Managing Clients*******************************
 
@@ -84,8 +93,6 @@ gender,
 
 // GET /clients/:id → full client profile (active or archived, but not deleted)
 router.get('/:id', async (req, res) => {
-  console.log('➡️ HIT GET /clients/:id', req.params.id);
-
   const { id } = req.params;
 
   try {
@@ -222,152 +229,65 @@ router.patch('/:id/delete', async (req, res) => {
 
 // Updating Clients And Adding ****************************************
 // POST /clients → add new client
-router.post('/', async (req, res) => {
-  console.log('➡️ HIT POST /clients');
-  console.log('Body:', req.body);
+
+
+router.post("/", upload.array("pdfs"), async (req, res) => {
+  const conn = await pool.getConnection();
 
   try {
-    const {
-      payment_due_date,
-      full_name,
-      gender,
-      phone,
-      location,
-      date_of_birth,
-      age,
-      email,
-      occupation,
-      emergency_contact_name,
-      emergency_relationship,
-      emergency_contact_phone,
-      medical_conditions,
-      medications,
-      injury_history,
-      doctor_advice,
-      activity_level,
-      current_routine,
-      training_goals,
-      preferred_training_time,
-      how_heard,
-      assessment_date,
-      program_type,
-      initial_measurements,
-      assigned_coach,
-      coach_notes
-    } = req.body;
+    await conn.beginTransaction();
 
-    // 🔴 REQUIRED FIELDS (NOT NULL in DB)
-    if (
-      !payment_due_date ||
-      !full_name ||
-      !phone ||
-      !activity_level ||
-      !training_goals ||
-      !preferred_training_time ||
-      !how_heard
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          'Missing required fields: payment_due_date, full_name, phone, activity_level, training_goals, preferred_training_time, how_heard'
-      });
+    const [result] = await conn.query(
+      `INSERT INTO clients (
+        payment_due_date,
+        full_name,
+        phone,
+        activity_level,
+        training_goals,
+        preferred_training_time,
+        how_heard
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        req.body.payment_due_date,
+        req.body.full_name,
+        req.body.phone,
+        req.body.activity_level,
+        req.body.training_goals,
+        req.body.preferred_training_time,
+        req.body.how_heard,
+      ]
+    );
+
+    const clientId = result.insertId;
+    let seq = 1;
+
+    for (const file of req.files || []) {
+      const remotePath = `${process.env.FTP_BASE_PATH}/clients/${clientId}/${file.filename}`;
+
+      if (process.env.NODE_ENV === "production") {
+        await uploadToHostinger(file.path, remotePath);
+      }
+
+      await conn.query(
+        `INSERT INTO client_pdfs (client_id, pdf_url, seq)
+         VALUES (?, ?, ?)`,
+        [
+          clientId,
+          `/fitnesskingdom/assets/clients/${clientId}/${file.filename}`,
+          seq++,
+        ]
+      );
     }
 
-    // OPTIONAL: simple enum validation for gender + activity_level
-    const allowedGenders = ['Male', 'Female', 'Other', null, undefined, ''];
-    if (!allowedGenders.includes(gender)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid gender. Allowed: Male, Female, Other'
-      });
-    }
+    await conn.commit();
 
-    const allowedActivity = ['Sedentary', 'Moderate', 'Active', 'Athlete'];
-    if (!allowedActivity.includes(activity_level)) {
-      return res.status(400).json({
-        success: false,
-        message:
-          'Invalid activity_level. Allowed: Sedentary, Moderate, Active, Athlete'
-      });
-    }
-
-    const sql = `
-  INSERT INTO clients (
-    payment_due_date,
-    full_name,
-    gender,
-    phone,
-    location,
-    date_of_birth,
-    age,
-    email,
-    occupation,
-    emergency_contact_name,
-    emergency_relationship,
-    emergency_contact_phone,
-    medical_conditions,
-    medications,
-    injury_history,
-    doctor_advice,
-    activity_level,
-    current_routine,
-    training_goals,
-    preferred_training_time,
-    how_heard,
-    assessment_date,
-    program_type,
-    initial_measurements,
-    assigned_coach,
-    coach_notes
-  ) 
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`;
-
-    const params = [
-      payment_due_date,
-      full_name,
-      gender || null,
-      phone,
-      location || null,
-      date_of_birth || null,
-      age ?? null,
-      email || null,
-      occupation || null,
-      emergency_contact_name || null,
-      emergency_relationship || null,
-      emergency_contact_phone || null,
-      medical_conditions || null,
-      medications || null,
-      injury_history || null,
-      doctor_advice || null,
-      activity_level,
-      current_routine || null,
-      training_goals,
-      preferred_training_time,
-      how_heard,
-      assessment_date || null,
-      program_type || null,
-      initial_measurements || null,
-      assigned_coach || null,
-      coach_notes || null
-    ];
-
-
-    console.log('SQL params:', params);
-
-    const [result] = await pool.query(sql, params);
-
-    return res.status(201).json({
-      success: true,
-      message: 'Client added successfully.',
-      clientId: result.insertId
-    });
+    res.json({ success: true, clientId });
   } catch (err) {
-    console.error('POST /clients error:', err);
-    return res.status(500).json({
-      success: false,
-      message: 'Server error while adding client.'
-    });
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({ success: false });
+  } finally {
+    conn.release();
   }
 });
 
@@ -536,5 +456,93 @@ router.patch('/:id/due-date', async (req, res) => {
 });
 
 
+// Creating the Clinets PDF Profile**************************************
+router.post(
+  '/clients/:id/pdfs',
+  upload.array('pdfs'),
+  async (req, res) => {
+    const { id: clientId } = req.params;
+
+    const [[{ nextSeq }]] = await pool.query(
+      `SELECT COALESCE(MAX(seq), 0) + 1 AS nextSeq
+       FROM client_pdfs
+       WHERE client_id = ? AND is_deleted = 0`,
+      [clientId]
+    );
+
+    let seq = nextSeq;
+    const uploaded = [];
+
+    for (const file of req.files) {
+      const filename = `${crypto.randomUUID()}.pdf`;
+
+      const remoteDir =
+        `${process.env.FTP_BASE_DIR}/clients/${clientId}`;
+
+      await uploadToFTP({
+        remoteDir,
+        filename,
+        buffer: file.buffer
+      });
+
+      const publicUrl =
+        `${process.env.FTP_PUBLIC_URL}/clients/${clientId}/${filename}`;
+
+      await pool.query(
+        `INSERT INTO client_pdfs (client_id, pdf_url, seq)
+         VALUES (?, ?, ?)`,
+        [clientId, publicUrl, seq++]
+      );
+
+      uploaded.push(publicUrl);
+    }
+
+    res.status(201).json({
+      success: true,
+      files: uploaded
+    });
+  }
+);
+
+
+// list PDFs ordered by seq
+
+router.get('/clients/:id/pdfs', async (req, res) => {
+  const { id } = req.params;
+
+  const [rows] = await pool.query(
+    `SELECT id, pdf_url, seq, created_at
+     FROM client_pdfs
+     WHERE client_id = ? AND is_deleted = 0
+     ORDER BY seq ASC`,
+    [id]
+  );
+
+  res.json({ success: true, pdfs: rows });
+});
+
+
+//  SOFT DELETE PDF
+
+router.patch('/clients/pdfs/:pdfId/delete', async (req, res) => {
+  const { pdfId } = req.params;
+
+  const [result] = await pool.query(
+    `UPDATE client_pdfs
+     SET is_deleted = 1,
+         deleted_at = CURRENT_TIMESTAMP
+     WHERE id = ? AND is_deleted = 0`,
+    [pdfId]
+  );
+
+  if (!result.affectedRows) {
+    return res.status(404).json({ success: false });
+  }
+
+  res.json({
+    success: true,
+    message: 'PDF deleted.'
+  });
+});
 
 module.exports = router;
