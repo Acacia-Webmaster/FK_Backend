@@ -11,8 +11,7 @@ const uploadToFTP = require('./ftpClient');
 const crypto = require('crypto');
 const { uploadToHostinger } = require("./ftpUpload");
 
-const PROD_ASSETS_BASE =
-  "/home/u489208360/domains/acaciawebmaster.com/public_html/fitnesskingdom/assets";
+
 
 // Getting and Managing Clients*******************************
 
@@ -259,21 +258,30 @@ router.post("/", upload.array("pdfs"), async (req, res) => {
     );
 
     const clientId = result.insertId;
+
+    // FINAL CLIENT DIRECTORY
+    const clientDir = path.join(
+      process.env.UPLOAD_BASE_PATH,
+      "clients",
+      String(clientId)
+    );
+
+    fs.mkdirSync(clientDir, { recursive: true });
+
     let seq = 1;
 
     for (const file of req.files || []) {
-      const remotePath = `${process.env.FTP_BASE_PATH}/clients/${clientId}/${file.filename}`;
+      const finalPath = path.join(clientDir, file.originalname);
 
-      if (process.env.NODE_ENV === "production") {
-        await uploadToHostinger(file.path, remotePath);
-      }
+      // Move from tmp → final
+      fs.renameSync(file.path, finalPath);
 
       await conn.query(
         `INSERT INTO client_pdfs (client_id, pdf_url, seq)
          VALUES (?, ?, ?)`,
         [
           clientId,
-          `/fitnesskingdom/assets/clients/${clientId}/${file.filename}`,
+          `/fitnesskingdom/assets/clients/${clientId}/${file.originalname}`,
           seq++,
         ]
       );
@@ -284,12 +292,13 @@ router.post("/", upload.array("pdfs"), async (req, res) => {
     res.json({ success: true, clientId });
   } catch (err) {
     await conn.rollback();
-    console.error(err);
+    console.error("Create client error:", err);
     res.status(500).json({ success: false });
   } finally {
     conn.release();
   }
 });
+
 
 // PUT /clients/:id → update client (partial update)
 router.put('/:id', async (req, res) => {
@@ -458,10 +467,10 @@ router.patch('/:id/due-date', async (req, res) => {
 
 // Creating the Clinets PDF Profile**************************************
 router.post(
-  '/clients/:id/pdfs',
-  upload.array('pdfs'),
+  "/clients/:id/pdfs",
+  upload.array("pdfs"),
   async (req, res) => {
-    const { id: clientId } = req.params;
+    const clientId = req.params.id;
 
     const [[{ nextSeq }]] = await pool.query(
       `SELECT COALESCE(MAX(seq), 0) + 1 AS nextSeq
@@ -470,23 +479,24 @@ router.post(
       [clientId]
     );
 
+    const clientDir = path.join(
+      process.env.UPLOAD_BASE_PATH,
+      "clients",
+      String(clientId)
+    );
+
+    fs.mkdirSync(clientDir, { recursive: true });
+
     let seq = nextSeq;
     const uploaded = [];
 
     for (const file of req.files) {
-      const filename = `${crypto.randomUUID()}.pdf`;
+      const finalPath = path.join(clientDir, file.originalname);
 
-      const remoteDir =
-        `${process.env.FTP_BASE_DIR}/clients/${clientId}`;
-
-      await uploadToFTP({
-        remoteDir,
-        filename,
-        buffer: file.buffer
-      });
+      fs.renameSync(file.path, finalPath);
 
       const publicUrl =
-        `${process.env.FTP_PUBLIC_URL}/clients/${clientId}/${filename}`;
+        `/fitnesskingdom/assets/clients/${clientId}/${file.originalname}`;
 
       await pool.query(
         `INSERT INTO client_pdfs (client_id, pdf_url, seq)
@@ -497,12 +507,10 @@ router.post(
       uploaded.push(publicUrl);
     }
 
-    res.status(201).json({
-      success: true,
-      files: uploaded
-    });
+    res.json({ success: true, files: uploaded });
   }
 );
+
 
 
 // list PDFs ordered by seq
