@@ -258,23 +258,17 @@ router.post("/", upload.array("pdfs"), async (req, res) => {
     );
 
     const clientId = result.insertId;
-
-    // FINAL CLIENT DIRECTORY
-    const clientDir = path.join(
-      process.env.FTP_BASE_DIR,
-      "clients",
-      String(clientId)
-    );
-
-    fs.mkdirSync(clientDir, { recursive: true });
-
     let seq = 1;
 
     for (const file of req.files || []) {
-      const finalPath = path.join(clientDir, file.originalname);
+      const remotePath =
+        `${process.env.FTP_BASE_DIR}/clients/${clientId}/${file.originalname}`;
 
-      // Move from tmp → final
-      fs.renameSync(file.path, finalPath);
+      // ✅ UPLOAD DIRECTLY TO HOSTINGER
+      await uploadToHostingerFromBuffer(
+        file.buffer,
+        remotePath
+      );
 
       await conn.query(
         `INSERT INTO client_pdfs (client_id, pdf_url, seq)
@@ -288,8 +282,8 @@ router.post("/", upload.array("pdfs"), async (req, res) => {
     }
 
     await conn.commit();
-
     res.json({ success: true, clientId });
+
   } catch (err) {
     await conn.rollback();
     console.error("Create client error:", err);
@@ -298,6 +292,7 @@ router.post("/", upload.array("pdfs"), async (req, res) => {
     conn.release();
   }
 });
+
 
 
 // PUT /clients/:id → update client (partial update)
