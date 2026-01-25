@@ -5,7 +5,7 @@ const path = require("path");
 const baseUploadPath = process.env.FTP_BASE_DIR;
 
 if (!baseUploadPath) {
-  throw new Error("UPLOAD_BASE_PATH is not defined");
+  throw new Error("FTP_BASE_DIR is not defined");
 }
 
 const storage = multer.diskStorage({

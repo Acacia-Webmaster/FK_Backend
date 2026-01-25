@@ -261,7 +261,7 @@ router.post("/", upload.array("pdfs"), async (req, res) => {
 
     // FINAL CLIENT DIRECTORY
     const clientDir = path.join(
-      process.env.UPLOAD_BASE_PATH,
+      process.env.FTP_BASE_DIR,
       "clients",
       String(clientId)
     );
@@ -480,7 +480,7 @@ router.post(
     );
 
     const clientDir = path.join(
-      process.env.UPLOAD_BASE_PATH,
+      process.env.FTP_BASE_DIR,
       "clients",
       String(clientId)
     );
