@@ -1,9 +1,9 @@
 const ftp = require("basic-ftp");
+const { Readable } = require("stream");
 const path = require("path");
 
-async function uploadToHostinger(localPath, remotePath) {
+async function uploadToHostingerFromBuffer(buffer, remotePath) {
   const client = new ftp.Client();
-  client.ftp.verbose = false;
 
   try {
     await client.access({
@@ -15,10 +15,13 @@ async function uploadToHostinger(localPath, remotePath) {
     });
 
     await client.ensureDir(path.dirname(remotePath));
-    await client.uploadFrom(localPath, remotePath);
+
+    const stream = Readable.from(buffer);
+    await client.uploadFrom(stream, remotePath);
+
   } finally {
     client.close();
   }
 }
 
-module.exports = { uploadToHostinger };
+module.exports = { uploadToHostingerFromBuffer };

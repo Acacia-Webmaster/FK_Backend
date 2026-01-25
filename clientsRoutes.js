@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const uploadToFTP = require('./ftpClient');
 const crypto = require('crypto');
-const { uploadToHostinger } = require("./ftpUpload");
+const { uploadToHostingerFromBuffer } = require("./ftpUpload");
 
 
 
@@ -264,7 +264,6 @@ router.post("/", upload.array("pdfs"), async (req, res) => {
       const remotePath =
         `${process.env.FTP_BASE_DIR}/clients/${clientId}/${file.originalname}`;
 
-      // ✅ UPLOAD DIRECTLY TO HOSTINGER
       await uploadToHostingerFromBuffer(
         file.buffer,
         remotePath
