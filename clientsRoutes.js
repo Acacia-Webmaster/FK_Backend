@@ -517,7 +517,36 @@ router.patch('/:id/due-date', async (req, res) => {
 
 
 // Creating the Clinets PDF Profile**************************************
-router.post("/clients/:id/pdfs", upload.array("pdfs"), async (req, res) => {
+
+router.patch('/:id/pdfs/reorder', async (req, res) => {
+  const { id } = req.params;
+  const { order } = req.body;
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    for (const item of order) {
+      await conn.query(
+        `UPDATE client_pdfs
+         SET seq = ?
+         WHERE id = ? AND client_id = ?`,
+        [item.seq, item.id, id]
+      );
+    }
+
+    await conn.commit();
+    res.json({ success: true });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({ success: false });
+  } finally {
+    conn.release();
+  }
+});
+
+router.post("/:id/pdfs", upload.array("pdfs"), async (req, res) => {
   const clientId = req.params.id;
 
   const [[{ nextSeq }]] = await pool.query(
@@ -553,7 +582,7 @@ router.post("/clients/:id/pdfs", upload.array("pdfs"), async (req, res) => {
 
 
 
-router.get('/clients/:id/pdfs', async (req, res) => {
+router.get('/:id/pdfs', async (req, res) => {
   const { id } = req.params;
 
   const [rows] = await pool.query(
@@ -569,7 +598,7 @@ router.get('/clients/:id/pdfs', async (req, res) => {
 
 
 
-router.patch('/clients/pdfs/:pdfId/delete', async (req, res) => {
+router.patch('/pdfs/:pdfId/delete', async (req, res) => {
   const { pdfId } = req.params;
 
   const [result] = await pool.query(
@@ -591,45 +620,7 @@ router.patch('/clients/pdfs/:pdfId/delete', async (req, res) => {
 });
 
 // PATCH /clients/:id/pdfs/reorder
-router.patch('/clients/:id/pdfs/reorder', async (req, res) => {
-  const { id } = req.params;
-  const { order } = req.body;
-  // order = [{ id: pdfId, seq: newSeq }]
 
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
 
-    for (const item of order) {
-      await conn.query(
-        `UPDATE client_pdfs 
-         SET seq = ? 
-         WHERE id = ? AND client_id = ?`,
-        [item.seq, item.id, id]
-      );
-    }
 
-    await conn.commit();
-    res.json({ success: true });
-  } catch (err) {
-    await conn.rollback();
-    console.error(err);
-    res.status(500).json({ success: false });
-  } finally {
-    conn.release();
-  }
-});
-
-// POST /clients/:id/pdfs
-export const uploadClientPdfs = async (clientId, files) => {
-  const formData = new FormData();
-  files.forEach((f) => formData.append("pdfs", f));
-
-  const res = await http.post(`/clients/${clientId}/pdfs`, formData, {
-    // IMPORTANT: let axios set multipart boundary
-    headers: undefined,
-  });
-
-  return res.data; // { success, files }
-};
 module.exports = router;
