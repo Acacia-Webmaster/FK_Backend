@@ -91,17 +91,20 @@ router.get('/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
-    const [rows] = await pool.query(
-      `
+    const [rows] = await pool.query(`
       SELECT 
         c.*,
         COALESCE(
           JSON_ARRAYAGG(
-            JSON_OBJECT(
-              'id', p.id,
-              'pdf_url', p.pdf_url,
-              'seq', p.seq,
-              'created_at', p.created_at
+            IF(
+              p.id IS NOT NULL,
+              JSON_OBJECT(
+                'id', p.id,
+                'pdf_url', p.pdf_url,
+                'seq', p.seq,
+                'created_at', p.created_at
+              ),
+              NULL
             )
           ),
           JSON_ARRAY()
@@ -111,27 +114,27 @@ router.get('/:id', async (req, res) => {
         ON p.client_id = c.id AND p.is_deleted = 0
       WHERE c.id = ? AND c.is_deleted = 0
       GROUP BY c.id
-      `,
-      [id]
-    );
+    `, [id]);
 
     if (!rows.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Client not found'
-      });
+      return res.status(404).json({ success: false });
     }
+
+    const client = rows[0];
+
+    // ✅ FIX: parse JSON string into real array
+    client.pdfs = typeof client.pdfs === "string"
+      ? JSON.parse(client.pdfs)
+      : client.pdfs;
 
     res.json({
       success: true,
-      client: rows[0]
+      client
     });
+
   } catch (err) {
-    console.error('GET /clients/:id error:', err);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching client'
-    });
+    console.error(err);
+    res.status(500).json({ success: false });
   }
 });
 
