@@ -600,4 +600,35 @@ router.patch('/clients/pdfs/:pdfId/delete', async (req, res) => {
   });
 });
 
+// PATCH /clients/:id/pdfs/reorder
+router.patch('/clients/:id/pdfs/reorder', async (req, res) => {
+  const { id } = req.params;
+  const { order } = req.body;
+  // order = [{ id: pdfId, seq: newSeq }]
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    for (const item of order) {
+      await conn.query(
+        `UPDATE client_pdfs 
+         SET seq = ? 
+         WHERE id = ? AND client_id = ?`,
+        [item.seq, item.id, id]
+      );
+    }
+
+    await conn.commit();
+    res.json({ success: true });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({ success: false });
+  } finally {
+    conn.release();
+  }
+});
+
+
 module.exports = router;
