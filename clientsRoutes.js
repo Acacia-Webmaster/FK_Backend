@@ -517,50 +517,40 @@ router.patch('/:id/due-date', async (req, res) => {
 
 
 // Creating the Clinets PDF Profile**************************************
-router.post(
-  "/clients/:id/pdfs",
-  upload.array("pdfs"),
-  async (req, res) => {
-    const clientId = req.params.id;
+router.post("/clients/:id/pdfs", upload.array("pdfs"), async (req, res) => {
+  const clientId = req.params.id;
 
-    const [[{ nextSeq }]] = await pool.query(
-      `SELECT COALESCE(MAX(seq), 0) + 1 AS nextSeq
-       FROM client_pdfs
-       WHERE client_id = ? AND is_deleted = 0`,
-      [clientId]
+  const [[{ nextSeq }]] = await pool.query(
+    `SELECT COALESCE(MAX(seq), 0) + 1 AS nextSeq
+     FROM client_pdfs
+     WHERE client_id = ? AND is_deleted = 0`,
+    [clientId]
+  );
+
+  let seq = nextSeq;
+  const uploaded = [];
+
+  for (const file of req.files || []) {
+    const remotePath =
+      `${process.env.FTP_BASE_DIR}/clients/${clientId}/${file.originalname}`;
+
+    await uploadToHostingerFromBuffer(file.buffer, remotePath);
+
+    const publicUrl =
+      `/fitnesskingdom/assets/clients/${clientId}/${file.originalname}`;
+
+    await pool.query(
+      `INSERT INTO client_pdfs (client_id, pdf_url, seq)
+       VALUES (?, ?, ?)`,
+      [clientId, publicUrl, seq++]
     );
 
-    const clientDir = path.join(
-      process.env.FTP_BASE_DIR,
-      "clients",
-      String(clientId)
-    );
-
-    fs.mkdirSync(clientDir, { recursive: true });
-
-    let seq = nextSeq;
-    const uploaded = [];
-
-    for (const file of req.files) {
-      const finalPath = path.join(clientDir, file.originalname);
-
-      fs.renameSync(file.path, finalPath);
-
-      const publicUrl =
-        `/fitnesskingdom/assets/clients/${clientId}/${file.originalname}`;
-
-      await pool.query(
-        `INSERT INTO client_pdfs (client_id, pdf_url, seq)
-         VALUES (?, ?, ?)`,
-        [clientId, publicUrl, seq++]
-      );
-
-      uploaded.push(publicUrl);
-    }
-
-    res.json({ success: true, files: uploaded });
+    uploaded.push(publicUrl);
   }
-);
+
+  res.json({ success: true, files: uploaded });
+});
+
 
 
 router.get('/clients/:id/pdfs', async (req, res) => {
@@ -630,5 +620,16 @@ router.patch('/clients/:id/pdfs/reorder', async (req, res) => {
   }
 });
 
+// POST /clients/:id/pdfs
+export const uploadClientPdfs = async (clientId, files) => {
+  const formData = new FormData();
+  files.forEach((f) => formData.append("pdfs", f));
 
+  const res = await http.post(`/clients/${clientId}/pdfs`, formData, {
+    // IMPORTANT: let axios set multipart boundary
+    headers: undefined,
+  });
+
+  return res.data; // { success, files }
+};
 module.exports = router;
