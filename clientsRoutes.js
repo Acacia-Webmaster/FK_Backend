@@ -236,26 +236,69 @@ router.post("/", upload.array("pdfs"), async (req, res) => {
   try {
     await conn.beginTransaction();
 
-    const [result] = await conn.query(
-      `INSERT INTO clients (
-        payment_due_date,
-        full_name,
-        phone,
-        activity_level,
-        training_goals,
-        preferred_training_time,
-        how_heard
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        req.body.payment_due_date,
-        req.body.full_name,
-        req.body.phone,
-        req.body.activity_level,
-        req.body.training_goals,
-        req.body.preferred_training_time,
-        req.body.how_heard,
-      ]
-    );
+const [result] = await conn.query(
+  `INSERT INTO clients (
+    payment_due_date,
+    full_name,
+    gender,
+    phone,
+    location,
+    date_of_birth,
+    age,
+    email,
+    occupation,
+    emergency_contact_name,
+    emergency_relationship,
+    emergency_contact_phone,
+    medical_conditions,
+    medications,
+    injury_history,
+    doctor_advice,
+    activity_level,
+    current_routine,
+    training_goals,
+    preferred_training_time,
+    how_heard,
+    assessment_date,
+    program_type,
+    initial_measurements,
+    assigned_coach,
+    coach_notes
+  ) VALUES (
+    ?,?,?,?,?,?,?,?,?,?,
+    ?,?,?,?,?,?,?,?,?,?,
+    ?,?,?,?,?,?
+  )`,
+  [
+    req.body.payment_due_date,
+    req.body.full_name,
+    req.body.gender,
+    req.body.phone,
+    req.body.location,
+    req.body.date_of_birth,
+    req.body.age,
+    req.body.email,
+    req.body.occupation,
+    req.body.emergency_contact_name,
+    req.body.emergency_relationship,
+    req.body.emergency_contact_phone,
+    req.body.medical_conditions,
+    req.body.medications,
+    req.body.injury_history,
+    req.body.doctor_advice,
+    req.body.activity_level,
+    req.body.current_routine,
+    req.body.training_goals,
+    req.body.preferred_training_time,
+    req.body.how_heard,
+    req.body.assessment_date,
+    req.body.program_type,
+    req.body.initial_measurements,
+    req.body.assigned_coach,
+    req.body.coach_notes
+  ]
+);
+
 
     const clientId = result.insertId;
     let seq = 1;
