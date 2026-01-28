@@ -13,11 +13,8 @@ const { uploadToHostingerFromBuffer } = require("./ftpUpload");
 
 
 
-// Getting and Managing Clients*******************************
 
-// GET /clients  → list active (non-archived, non-deleted) clients
 router.get('/', async (req, res) => {
-  console.log('➡️ HIT GET /clients');
 
   try {
     const [rows] = await pool.query(
@@ -51,7 +48,6 @@ gender,
   }
 });
 
-// GET /clients/archived → list archived clients (not deleted)
 router.get('/archived', async (req, res) => {
   console.log('➡️ HIT GET /clients/archived');
 
@@ -96,11 +92,30 @@ router.get('/:id', async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      'SELECT * FROM clients WHERE id = ? AND is_deleted = 0',
+      `
+      SELECT 
+        c.*,
+        COALESCE(
+          JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', p.id,
+              'pdf_url', p.pdf_url,
+              'seq', p.seq,
+              'created_at', p.created_at
+            )
+          ),
+          JSON_ARRAY()
+        ) AS pdfs
+      FROM clients c
+      LEFT JOIN client_pdfs p 
+        ON p.client_id = c.id AND p.is_deleted = 0
+      WHERE c.id = ? AND c.is_deleted = 0
+      GROUP BY c.id
+      `,
       [id]
     );
 
-    if (rows.length === 0) {
+    if (!rows.length) {
       return res.status(404).json({
         success: false,
         message: 'Client not found'
@@ -119,6 +134,7 @@ router.get('/:id', async (req, res) => {
     });
   }
 });
+
 
 // Archiving and Unarchiving Clients****************************************
 // PATCH /clients/:id/archive → set is_archived = 1
@@ -226,18 +242,14 @@ router.patch('/:id/delete', async (req, res) => {
 });
 
 
-// Updating Clients And Adding ****************************************
-// POST /clients → add new client
-
-
 router.post("/", upload.array("pdfs"), async (req, res) => {
   const conn = await pool.getConnection();
 
   try {
     await conn.beginTransaction();
 
-const [result] = await conn.query(
-  `INSERT INTO clients (
+    const [result] = await conn.query(
+      `INSERT INTO clients (
     payment_due_date,
     full_name,
     gender,
@@ -269,35 +281,35 @@ const [result] = await conn.query(
     ?,?,?,?,?,?,?,?,?,?,
     ?,?,?,?,?,?
   )`,
-  [
-    req.body.payment_due_date,
-    req.body.full_name,
-    req.body.gender,
-    req.body.phone,
-    req.body.location,
-    req.body.date_of_birth,
-    req.body.age,
-    req.body.email,
-    req.body.occupation,
-    req.body.emergency_contact_name,
-    req.body.emergency_relationship,
-    req.body.emergency_contact_phone,
-    req.body.medical_conditions,
-    req.body.medications,
-    req.body.injury_history,
-    req.body.doctor_advice,
-    req.body.activity_level,
-    req.body.current_routine,
-    req.body.training_goals,
-    req.body.preferred_training_time,
-    req.body.how_heard,
-    req.body.assessment_date,
-    req.body.program_type,
-    req.body.initial_measurements,
-    req.body.assigned_coach,
-    req.body.coach_notes
-  ]
-);
+      [
+        req.body.payment_due_date,
+        req.body.full_name,
+        req.body.gender,
+        req.body.phone,
+        req.body.location,
+        req.body.date_of_birth,
+        req.body.age,
+        req.body.email,
+        req.body.occupation,
+        req.body.emergency_contact_name,
+        req.body.emergency_relationship,
+        req.body.emergency_contact_phone,
+        req.body.medical_conditions,
+        req.body.medications,
+        req.body.injury_history,
+        req.body.doctor_advice,
+        req.body.activity_level,
+        req.body.current_routine,
+        req.body.training_goals,
+        req.body.preferred_training_time,
+        req.body.how_heard,
+        req.body.assessment_date,
+        req.body.program_type,
+        req.body.initial_measurements,
+        req.body.assigned_coach,
+        req.body.coach_notes
+      ]
+    );
 
 
     const clientId = result.insertId;
@@ -334,7 +346,6 @@ const [result] = await conn.query(
     conn.release();
   }
 });
-
 
 
 // PUT /clients/:id → update client (partial update)
@@ -549,9 +560,6 @@ router.post(
 );
 
 
-
-// list PDFs ordered by seq
-
 router.get('/clients/:id/pdfs', async (req, res) => {
   const { id } = req.params;
 
@@ -567,7 +575,6 @@ router.get('/clients/:id/pdfs', async (req, res) => {
 });
 
 
-//  SOFT DELETE PDF
 
 router.patch('/clients/pdfs/:pdfId/delete', async (req, res) => {
   const { pdfId } = req.params;
